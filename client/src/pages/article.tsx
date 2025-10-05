@@ -378,7 +378,8 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       setOnchainBusy(true);
       setOnchainResult(null);
       
-      const tokenType = Math.floor(Math.random() * 3);
+      // Deterministic token type based on article ID: 0=CATCH, 1=BOOP, 2=ARB
+      const tokenType = articleId === "0" ? 0 : articleId === "3" ? 1 : 2;
       
       console.log('🚀 About to call writeContractAsync with:', {
         contract: CONTRACT_ADDRESS,
