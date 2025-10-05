@@ -116,7 +116,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="p-0 text-lg font-bold hover:bg-transparent bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent"
               onClick={() => setLocation("/")}
             >
-              Crypto News
+              EarnReads$
             </Button>
           </div>
           <div className="ml-auto flex items-center gap-4">
