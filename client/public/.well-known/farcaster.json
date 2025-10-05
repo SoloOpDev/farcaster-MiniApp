@@ -1,0 +1,16 @@
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjEyMzQ1LCJ0eXBlIjoiY3VzdG9keSIsImtleSI6IjB4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCJ9",
+    "payload": "eyJkb21haW4iOiJmYXJjYXN0ZXItbWluaWFwcC1wcm9kdWN0aW9uLnVwLnJhaWx3YXkuYXBwIn0",
+    "signature": "MHg..."
+  },
+  "frame": {
+    "version": "1",
+    "name": "EarnReads$",
+    "homeUrl": "https://farcaster-miniapp-production.up.railway.app",
+    "iconUrl": "https://farcaster-miniapp-production.up.railway.app/icon.png",
+    "splashImageUrl": "https://farcaster-miniapp-production.up.railway.app/splash.png",
+    "splashBackgroundColor": "#1a1a2e",
+    "webhookUrl": "https://farcaster-miniapp-production.up.railway.app/api/webhook"
+  }
+}
