@@ -11,6 +11,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useFarcaster } from "@/lib/farcaster";
 import type { CryptoPanicResponse, UserClaim } from "@shared/schema";
+import { getApiUrl } from "@/lib/api";
 
 // Token info - Arbitrum Mainnet addresses
 const TOKEN_INFO: Record<number, { symbol: string; address: string; amountPerClaim: string }> = {
@@ -46,7 +47,14 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
   });
 
   const { data: userClaims = [] } = useQuery<UserClaim[]>({
-    queryKey: ["/api/user/claims"],
+    queryKey: ["/api/user/claims", fid],
+    queryFn: async () => {
+      const url = fid ? `${getApiUrl("/api/user/claims")}?fid=${fid}` : getApiUrl("/api/user/claims");
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch claims");
+      return res.json();
+    },
+    enabled: Boolean(fid), // Only fetch when FID is available
     staleTime: 30 * 1000,
   });
 
@@ -149,57 +157,16 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       if (!fid) throw new Error('Farcaster FID not found');
       if (!eligible) throw new Error('Not eligible to claim yet');
       
-      // Force switch to Arbitrum Mainnet
-      const eth: any = (window as any)?.ethereum;
-      const getCurrentChain = async () => {
-        if (!eth?.request) return null;
-        try {
-          const chainId = await eth.request({ method: 'eth_chainId' });
-          return parseInt(chainId, 16);
-        } catch {
-          return null;
-        }
-      };
-      
-      const currentChain = await getCurrentChain();
-      if (currentChain !== 42161 && eth?.request) {
+      // Check if we're on the right network (Arbitrum Mainnet = 42161)
+      if (activeChainId !== 42161) {
         setOnchainBusy(true);
         setOnchainResult('Switching to Arbitrum Mainnet...');
         try {
-          await eth.request({ 
-            method: 'wallet_switchEthereumChain', 
-            params: [{ chainId: '0xa4b1' }] 
-          });
+          await switchChainAsync({ chainId: 42161 });
         } catch (switchError: any) {
-          if (switchError.code === 4902 || switchError.code === -32603) {
-            await eth.request({ 
-              method: 'wallet_addEthereumChain', 
-              params: [{
-                chainId: '0xa4b1',
-                chainName: 'Arbitrum One',
-                nativeCurrency: { name: 'Ethereum', symbol: 'ETH', decimals: 18 },
-                rpcUrls: ['https://arb1.arbitrum.io/rpc'],
-                blockExplorerUrls: ['https://arbiscan.io'],
-              }]
-            });
-            await eth.request({ 
-              method: 'wallet_switchEthereumChain', 
-              params: [{ chainId: '0xa4b1' }] 
-            });
-          } else {
-            setOnchainBusy(false);
-            throw new Error('Network switch failed. Please switch to Arbitrum Mainnet manually in MetaMask');
-          }
-        }
-        
-        setOnchainResult('Verifying network switch...');
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const newChain = await getCurrentChain();
-        if (newChain !== 42161) {
           setOnchainBusy(false);
-          throw new Error('Still on wrong network. Please manually switch to Arbitrum Mainnet in MetaMask and try again');
+          throw new Error('Network switch failed. Please switch to Arbitrum Mainnet manually and try again');
         }
-        
         setOnchainBusy(false);
         setOnchainResult(null);
       }
@@ -221,7 +188,7 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       setOnchainResult(`Submitted. Tx: ${hash}`);
       
       // Record claim in backend
-      await fetch('/api/record-claim', {
+      await fetch(getApiUrl('/api/record-claim'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fid, articleId, tokens: [TOKEN_INFO[tokenType].symbol], txHash: hash })
