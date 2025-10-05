@@ -1,0 +1,353 @@
+import express from 'express';
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { insertUserClaimSchema } from "@shared/schema";
+import { z } from "zod";
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Get news articles from CoinDesk RSS
+  app.get("/api/news", async (_req, res) => {
+    try {
+      // For demo, create well-formatted news data
+      // Get news from RSS feed
+  app.get("/api/news", async (_req, res) => {
+    try {
+      // For development, we'll use mock data with proper HTML content
+      const newsData = {
+        results: [{
+          id: 1,
+          title: "Bitcoin's Path to Mass Adoption Accelerates",
+          description: "Major financial institutions are rapidly embracing Bitcoin, marking a significant shift in the cryptocurrency landscape.",
+          content: `<div class="article-content">
+            <p>Major financial institutions are rapidly embracing Bitcoin, marking a significant shift in the cryptocurrency landscape. This groundbreaking development signals a new era in digital asset adoption.</p>
+            
+            <p>The integration of Bitcoin into traditional financial systems has accelerated dramatically in recent months. Several key factors have contributed to this shift:</p>
+            
+            <ul>
+              <li>Regulatory Clarity: Improved regulatory frameworks have provided institutions with the confidence to enter the crypto space.</li>
+              <li>Infrastructure Development: Enhanced custody solutions and trading platforms have made Bitcoin more accessible to institutional investors.</li>
+              <li>Market Maturity: Increased market depth and liquidity have reduced volatility concerns.</li>
+            </ul>
+            
+            <p>Industry experts suggest this trend could lead to unprecedented growth in the cryptocurrency market cap. "We're seeing a fundamental shift in how traditional finance views digital assets," notes Sarah Chen, Chief Strategy Officer at Digital Asset Capital.</p>
+            
+            <p>As institutions continue to allocate portions of their portfolios to Bitcoin, analysts predict this could trigger a new wave of retail adoption. The increased institutional presence also brings enhanced market stability and improved price discovery mechanisms.</p>
+          </div>`,
+          published_at: new Date().toISOString(),
+          source: { title: "CryptoNews", domain: "cryptonews.com" },
+          image: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=800&fit=crop"
+        },
+          {
+            id: 2,
+            title: "DeFi Protocol Breaks New Ground",
+            description: "A groundbreaking DeFi protocol introduces innovative staking mechanisms with enhanced security features.",
+            content: `
+              <p>A groundbreaking DeFi protocol introduces innovative staking mechanisms with enhanced security features, setting new standards for decentralized finance.</p>
+              
+              <p>The protocol, named "SecureStake", implements several revolutionary features:</p>
+              
+              <ul>
+                <li>Multi-layered security architecture</li>
+                <li>Real-time risk assessment</li>
+                <li>Automated audit mechanisms</li>
+                <li>Dynamic yield optimization</li>
+              </ul>
+              
+              <p>These innovations address long-standing concerns in the DeFi space while maximizing returns for users. The protocol has already attracted over $100M in Total Value Locked (TVL) within its first week.</p>
+              
+              <p>Security experts have praised the protocol's innovative approach to risk management, with some calling it a potential game-changer for the entire DeFi ecosystem.</p>
+            `,
+            published_at: new Date(Date.now() - 3600000).toISOString(),
+            source: { title: "DeFi Daily", domain: "defidaily.com" },
+            image: "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&fit=crop"
+          },
+          {
+            id: 3,
+            title: "NFT Gaming Platform Sets New Records",
+            description: "Revolutionary NFT gaming platform achieves unprecedented user growth and trading volume.",
+            content: `
+              <p>A revolutionary NFT gaming platform has achieved unprecedented user growth and trading volume, marking a significant milestone in the blockchain gaming industry.</p>
+              
+              <p>The platform's recent achievements include:</p>
+              
+              <ul>
+                <li>Over 1 million active daily users</li>
+                <li>$50 million in daily trading volume</li>
+                <li>100,000 new NFTs minted daily</li>
+              </ul>
+              
+              <p>This success demonstrates the growing mainstream adoption of blockchain gaming and NFT technology. The platform's innovative play-to-earn mechanics have created new opportunities for gamers worldwide.</p>
+              
+              <p>Gaming industry analysts predict this could be the beginning of a larger trend, as traditional gaming companies begin to explore blockchain integration.</p>
+            `,
+            published_at: new Date(Date.now() - 7200000).toISOString(),
+            source: { title: "GameFi News", domain: "gamefinews.com" },
+            image: "https://images.unsplash.com/photo-1640340434855-6084b1f4901c?w=800&fit=crop"
+          }
+        ]
+      };
+
+The integration of Bitcoin into traditional financial systems has accelerated dramatically in recent months. Several key factors have contributed to this shift:
+
+1. Regulatory Clarity: Improved regulatory frameworks have provided institutions with the confidence to enter the crypto space.
+2. Infrastructure Development: Enhanced custody solutions and trading platforms have made Bitcoin more accessible to institutional investors.
+3. Market Maturity: Increased market depth and liquidity have reduced volatility concerns.
+
+Industry experts suggest this trend could lead to unprecedented growth in the cryptocurrency market cap. "We're seeing a fundamental shift in how traditional finance views digital assets," notes Sarah Chen, Chief Strategy Officer at Digital Asset Capital.`,
+            published_at: new Date().toISOString(),
+            source: { title: "CryptoNews", domain: "cryptonews.com" },
+            image: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=400&h=250&fit=crop"
+          },
+          {
+            id: 2,
+            title: "DeFi Protocol Breaks New Ground",
+            description: "A groundbreaking DeFi protocol introduces innovative staking mechanisms with enhanced security features.",
+            content: `A groundbreaking DeFi protocol introduces innovative staking mechanisms with enhanced security features, setting new standards for decentralized finance.
+
+The protocol, named "SecureStake", implements several revolutionary features:
+
+- Multi-layered security architecture
+- Real-time risk assessment
+- Automated audit mechanisms
+- Dynamic yield optimization
+
+These innovations address long-standing concerns in the DeFi space while maximizing returns for users. The protocol has already attracted over $100M in Total Value Locked (TVL) within its first week.`,
+            published_at: new Date(Date.now() - 3600000).toISOString(),
+            source: { title: "DeFi Daily", domain: "defidaily.com" },
+            image: "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=400&h=250&fit=crop"
+          },
+          {
+            id: 3,
+            title: "NFT Gaming Platform Sets New Records",
+            description: "Revolutionary NFT gaming platform achieves unprecedented user growth and trading volume.",
+            content: `Revolutionary NFT gaming platform achieves unprecedented user growth and trading volume, marking a significant milestone in the blockchain gaming industry.
+
+The platform has recorded:
+• Over 1 million active daily users
+• $50 million in daily trading volume
+• 100,000 new NFTs minted daily
+
+This success demonstrates the growing mainstream adoption of blockchain gaming and NFT technology. The platform's innovative play-to-earn mechanics have created new opportunities for gamers worldwide.`,
+            published_at: new Date(Date.now() - 7200000).toISOString(),
+            source: { title: "GameFi News", domain: "gamefinews.com" },
+            image: "https://images.unsplash.com/photo-1640340434855-6084b1f4901c?w=400&h=250&fit=crop"
+          },
+          {
+            id: 4,
+            title: "Ethereum Layer 2 Solution Launches",
+            description: "New scaling solution promises to reduce gas fees and increase transaction speeds on Ethereum network.",
+            content: `New scaling solution promises to reduce gas fees and increase transaction speeds on Ethereum network, potentially solving one of the biggest challenges facing the network.
+
+The solution, dubbed "TurboScale", offers:
+• Transaction costs reduced by up to 98%
+• Processing speeds of up to 100,000 transactions per second
+• Full compatibility with existing Ethereum smart contracts
+• Immediate finality for most transactions
+
+Early testing shows promising results, with major DeFi protocols already planning integration.`,
+            published_at: new Date(Date.now() - 10800000).toISOString(),
+            source: { title: "ETH World", domain: "ethworld.com" },
+            image: "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=400&h=250&fit=crop"
+          },
+          {
+            id: 5,
+            title: "Crypto Regulation Framework Announced",
+            description: "Global regulators propose comprehensive framework for cryptocurrency oversight and compliance.",
+            content: `Global regulators propose comprehensive framework for cryptocurrency oversight and compliance, providing clear guidelines for the industry.
+
+The framework addresses:
+• Digital asset classification
+• Trading platform requirements
+• Consumer protection measures
+• Anti-money laundering protocols
+• Cross-border transaction monitoring
+
+Industry leaders have largely welcomed the proposal, seeing it as a positive step toward mainstream adoption while ensuring market stability and investor protection.`,
+            published_at: new Date(Date.now() - 14400000).toISOString(),
+            source: { title: "Crypto Legal", domain: "cryptolegal.com" },
+            image: "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=400&h=250&fit=crop"
+          }
+        ]
+      };
+
+      // Store in memory for article retrieval
+      await storage.createNewsArticles(mockData.results.map(article => ({
+        id: article.id.toString(),
+        title: article.title,
+        description: article.description,
+        content: article.content,
+        publishedAt: new Date(article.published_at),
+        kind: "news",
+        sourceTitle: article.source.title,
+        sourceDomain: article.source.domain,
+        originalUrl: `https://${article.source.domain}`,
+        image: article.image,
+      })));
+      
+      res.json(mockData);
+        id: article.id.toString(),
+        title: article.title,
+        description: article.description,
+        publishedAt: new Date(article.published_at),
+        kind: "news",
+        sourceTitle: article.source.title,
+        sourceDomain: article.source.domain,
+        originalUrl: article.original_url,
+        image: article.image || "",
+      }));
+
+      // Store articles in our memory storage
+      await storage.createNewsArticles(articles);
+      res.json(newsData);
+
+    } catch (error) {
+      console.error("Error fetching news:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch news articles",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Get article content
+  app.get("/api/article/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // First try to get the article from our storage
+      const articles = await storage.getNewsArticles();
+      const article = articles.find(a => a.id === id);
+      
+      if (!article) {
+        return res.status(404).json({ message: "Article not found" });
+      }
+
+      // For demo purposes, return enhanced content based on the article
+      const enhancedContent = {
+        ...article,
+        content: generateArticleContent(article.title, article.description || ''),
+      };
+
+      res.json(enhancedContent);
+    } catch (error) {
+      console.error("Error fetching article content:", error);
+      res.status(500).json({ message: "Failed to fetch article content" });
+    }
+  });
+
+  // Helper function to generate realistic article content
+  function generateArticleContent(title: string, description: string): string {
+    const paragraphs = [
+      description,
+      "",
+      "The cryptocurrency market continues to evolve rapidly, with institutional adoption driving significant changes in trading patterns and investment strategies. Market analysts suggest that this development could have far-reaching implications for the broader financial ecosystem.",
+      "",
+      "Technical analysis indicates strong momentum across major cryptocurrencies, with trading volumes reaching new highs. The increased activity reflects growing confidence among both retail and institutional investors.",
+      "",
+      "Industry experts emphasize the importance of understanding the underlying technology and market dynamics. As the space matures, education and awareness become crucial factors for sustainable growth.",
+    ];
+    
+    return paragraphs.join("\n");
+  }
+
+  // Get user profile
+  app.get("/api/user/profile", async (_req, res) => {
+    try {
+      // For demo, always return the default user
+      const user = await storage.getUser("default-user");
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if we need to reset daily claims (new day)
+      const today = new Date();
+      const lastClaimDate = user.lastClaimDate;
+      
+      if (lastClaimDate) {
+        const lastClaimDay = new Date(lastClaimDate);
+        lastClaimDay.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+        
+        if (today.getTime() > lastClaimDay.getTime()) {
+          await storage.resetDailyClaims(user.id);
+          const updatedUser = await storage.getUser(user.id);
+          return res.json(updatedUser);
+        }
+      }
+
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      res.status(500).json({ message: "Failed to fetch user profile" });
+    }
+  });
+
+  // Get user claims
+  app.get("/api/user/claims", async (_req, res) => {
+    try {
+      const userId = "default-user"; // For demo
+      const claims = await storage.getUserClaims(userId);
+      res.json(claims);
+    } catch (error) {
+      console.error("Error fetching user claims:", error);
+      res.status(500).json({ message: "Failed to fetch user claims" });
+    }
+  });
+
+  // Claim tokens
+  app.post("/api/user/claim", async (req, res) => {
+    try {
+      const claimData = insertUserClaimSchema.parse(req.body);
+      const userId = "default-user"; // For demo
+      
+      // Get current user
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check daily limit (max 3 claims per day)
+      const today = new Date();
+      const dailyClaims = await storage.getUserDailyClaims(userId, today);
+      
+      if (dailyClaims.length >= 3) {
+        return res.status(400).json({ message: "Daily claim limit reached" });
+      }
+
+      // Check if already claimed for this article
+      const existingClaim = await storage.getUserClaimForArticle(userId, claimData.articleId);
+      if (existingClaim) {
+        return res.status(400).json({ message: "Already claimed for this article" });
+      }
+
+      // Create the claim
+      const claim = await storage.createUserClaim({
+        ...claimData,
+        userId,
+      });
+
+      // Update user token balance and daily claims count
+      const newBalance = user.tokenBalance + claimData.tokensEarned;
+      const newDailyClaims = user.dailyClaims + 1;
+      
+      await storage.updateUserTokens(userId, newBalance, newDailyClaims);
+
+      res.json({ 
+        claim,
+        newBalance,
+        dailyClaims: newDailyClaims,
+        message: "Tokens claimed successfully"
+      });
+    } catch (error) {
+      console.error("Error claiming tokens:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to claim tokens" });
+    }
+  });
+
+  const httpServer = createServer(app);
+  return httpServer;
+}

@@ -1,0 +1,514 @@
+import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { formatDistanceToNow } from "date-fns";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, Loader2, DollarSign, Clock, Coins, CheckCircle } from "lucide-react";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, useChainId, useSwitchChain } from "wagmi";
+import { decodeEventLog } from "viem";
+import { NEWS_REWARD_ABI } from "@/lib/abi";
+import { useEffect, useState, useMemo } from "react";
+import { useToast } from "@/hooks/use-toast";
+import type { CryptoPanicResponse, UserClaim } from "@shared/schema";
+
+// Local mapping for token display on success. Indexes must match contract mapping.
+const TOKEN_INFO: Record<number, { symbol: string; address: string; amountPerClaim: string }> = {
+  0: { symbol: 'CATCH', address: '0xFe14CfE279049418c40c6F718cdC68a4CD1d13a9', amountPerClaim: '5' },
+  1: { symbol: 'BOOP',  address: '0x2bD952979D1829Dd3FE355097F3871754b0363D6', amountPerClaim: '4000' },
+  2: { symbol: 'ARB',   address: '0x0cE69E076E268aE36462F3BC63E93EADD6dDf078', amountPerClaim: '0.001' },
+};
+
+const ERC20_ABI = [
+  { type: 'function', name: 'transfer', stateMutability: 'nonpayable', inputs: [ { name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' } ], outputs: [ { type: 'bool' } ] },
+  { type: 'function', name: 'decimals', stateMutability: 'view', inputs: [], outputs: [ { type: 'uint8' } ] },
+] as const;
+
+export default function ArticlePage({ params }: { params: { id: string } }) {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [timer, setTimer] = useState(10);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [isClaimed, setIsClaimed] = useState(false);
+  const [fullContent, setFullContent] = useState<string | null>(null);
+  const [showClaimHint, setShowClaimHint] = useState(false);
+  const [onchainAddress, setOnchainAddress] = useState("");
+  const [onchainBusy, setOnchainBusy] = useState(false);
+  const [onchainResult, setOnchainResult] = useState<string | null>(null);
+  const [claimsUsedToday, setClaimsUsedToday] = useState<number>(0);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const { address, isConnected } = useAccount();
+  const activeChainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
+
+  const DEFAULT_CONTRACT = '0xcE737AbD954DEf45cc05b4187582f3663Eb9cB47';
+  const CONTRACT_ADDRESS = (
+    (import.meta as any)?.env?.VITE_CONTRACT_ADDRESS || (import.meta as any)?.env?.NEXT_PUBLIC_CONTRACT_ADDRESS || DEFAULT_CONTRACT
+  ) as string;
+  
+  // Get cached news data - this should be instant since it's already cached from home page
+  const { data: newsData } = useQuery<CryptoPanicResponse>({
+    queryKey: ["/api/news"],
+    staleTime: 5 * 60 * 1000, // Use cached data for 5 minutes
+  });
+
+  const { data: userClaims = [] } = useQuery<UserClaim[]>({
+    queryKey: ["/api/user/claims"],
+    staleTime: 30 * 1000, // Use cached data for 30 seconds
+  });
+
+  // The ID from the URL is now a simple numeric ID
+  const articleId = params.id;
+
+  // Primary article data source: the list from the home page (should be instant)
+  const article = newsData?.results?.find(a => a.id.toString() === articleId);
+
+  // Fallback: if the list item lacks full content, fetch the specific article
+  const { data: articleDetail } = useQuery<any>({
+    queryKey: ["/api/article", params.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/article/${params.id}`);
+      if (!res.ok) throw new Error('Failed to fetch article details');
+      return res.json();
+    },
+    enabled: !!params.id && !!newsData && (!article || !(article as any).content || (article as any).content.length < 100),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const articleIndex = newsData?.results?.findIndex(a => a.id.toString() === params.id) ?? -1;
+  // Use the same deterministic logic as home page
+  const rewardableIndices = [0, 3, 6]; // First, fourth, and seventh articles will be rewardable
+  const hasReward = articleIndex >= 0 && 
+    rewardableIndices.includes(articleIndex) &&
+    !userClaims.some(claim => claim.articleId === params.id);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isTimerActive && timer > 0) {
+      interval = setInterval(() => {
+        setTimer(timer - 1);
+      }, 1000);
+    } else if (timer === 0 && isTimerActive) {
+      setIsTimerActive(false);
+      console.log('⏰ Timer ended! Button enabled?', 'hasReward:', hasReward, 'isConnected:', isConnected, 'claimsUsedToday:', claimsUsedToday);
+      // Show hint to guide users to the claim CTA
+      if (hasReward && !isClaimed) {
+        setShowClaimHint(true);
+      }
+    }
+    return () => clearInterval(interval);
+  }, [timer, isTimerActive]);
+
+  useEffect(() => {
+    if (hasReward && !isClaimed) {
+      setIsTimerActive(true);
+      setTimer(10);
+      console.log('✓ Timer started - hasReward:', hasReward, 'isClaimed:', isClaimed);
+    } else {
+      setIsTimerActive(false);
+      setTimer(10);
+      setShowClaimHint(false);
+      console.log('✗ Timer NOT started - hasReward:', hasReward, 'isClaimed:', isClaimed, 'articleIndex:', articleIndex, 'isConnected:', isConnected);
+    }
+    return () => {
+      setIsTimerActive(false);
+      setShowClaimHint(false);
+    };
+  }, [hasReward, isClaimed]);
+
+  // Read on-chain claims used when connected
+  const { data: usedClaimsData } = useReadContract({
+    abi: NEWS_REWARD_ABI,
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    functionName: 'claimsUsedToday',
+    args: address ? [address as `0x${string}`] : undefined,
+    query: { enabled: Boolean(CONTRACT_ADDRESS && address) },
+  });
+
+  useEffect(() => {
+    if (typeof usedClaimsData === 'number') setClaimsUsedToday(usedClaimsData);
+    else if (usedClaimsData != null) setClaimsUsedToday(Number(usedClaimsData));
+    if (address) setWalletAddress(address);
+  }, [usedClaimsData, address]);
+
+  const { writeContractAsync } = useWriteContract();
+  const [pendingHash, setPendingHash] = useState<`0x${string}` | null>(null);
+  const { isLoading: txPending, isSuccess: txSuccess, data: txReceipt } = useWaitForTransactionReceipt({ hash: pendingHash ?? undefined });
+
+  const handleOnchainClaim = async () => {
+    try {
+      if (!isConnected || !address) throw new Error('Wallet not connected');
+      
+      // Force switch to Ethereum Sepolia using MetaMask directly
+      const eth: any = (window as any)?.ethereum;
+      
+      // Check current chain in MetaMask
+      const getCurrentChain = async () => {
+        if (!eth?.request) return null;
+        try {
+          const chainId = await eth.request({ method: 'eth_chainId' });
+          return parseInt(chainId, 16);
+        } catch {
+          return null;
+        }
+      };
+      
+      const currentChain = await getCurrentChain();
+      if (currentChain !== 11155111 && eth?.request) {
+        setOnchainBusy(true);
+        setOnchainResult('Switching to Ethereum Sepolia...');
+        try {
+          // Try switch first
+          await eth.request({ 
+            method: 'wallet_switchEthereumChain', 
+            params: [{ chainId: '0xaa36a7' }] 
+          });
+        } catch (switchError: any) {
+          // If network not added, add it then switch
+          if (switchError.code === 4902 || switchError.code === -32603) {
+            await eth.request({ 
+              method: 'wallet_addEthereumChain', 
+              params: [{
+                chainId: '0xaa36a7',
+                chainName: 'Sepolia test network',
+                nativeCurrency: { name: 'Ethereum', symbol: 'ETH', decimals: 18 },
+                rpcUrls: ['https://rpc.sepolia.org'],
+                blockExplorerUrls: ['https://sepolia.etherscan.io'],
+              }]
+            });
+            await eth.request({ 
+              method: 'wallet_switchEthereumChain', 
+              params: [{ chainId: '0xaa36a7' }] 
+            });
+          } else {
+            setOnchainBusy(false);
+            throw new Error('Network switch failed. Please switch to Ethereum Sepolia manually in MetaMask');
+          }
+        }
+        
+        // Verify the switch actually happened
+        setOnchainResult('Verifying network switch...');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const newChain = await getCurrentChain();
+        if (newChain !== 11155111) {
+          setOnchainBusy(false);
+          throw new Error('Still on wrong network. Please manually switch to Ethereum Sepolia in MetaMask and try again');
+        }
+        
+        setOnchainBusy(false);
+        setOnchainResult(null);
+      }
+      
+      if (claimsUsedToday >= 3) throw new Error('Daily claim limit (3) reached');
+      setOnchainBusy(true);
+      setOnchainResult(null);
+      // Randomize token type on each claim: 0=CATCH, 1=BOOP, 2=ARB
+      const tokenType = Math.floor(Math.random() * 3);
+      const hash = await writeContractAsync({
+        abi: NEWS_REWARD_ABI,
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        functionName: 'claimReward',
+        args: [tokenType],
+      });
+      setPendingHash(hash as `0x${string}`);
+      setOnchainResult(`Submitted. Tx: ${hash}`);
+    } catch (e: any) {
+      setOnchainResult(e?.message || 'Failed to submit on-chain claim');
+      toast({ title: 'Claim failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setOnchainBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (txSuccess) {
+      setIsClaimed(true);
+      setClaimsUsedToday(Math.min(3, (claimsUsedToday ?? 0) + 1));
+      let tokenTypeLabel: string | undefined;
+      let tokenInfo: { symbol: string; address: string; amountPerClaim: string } | undefined;
+      try {
+        // Try to decode token type from logs with flexible event names
+        const logs = txReceipt?.logs ?? [];
+        for (const log of logs) {
+          try {
+            const ev = decodeEventLog({
+              abi: NEWS_REWARD_ABI as any,
+              data: log.data as `0x${string}`,
+              topics: (log.topics as unknown as [`0x${string}`, ...`0x${string}`[]]),
+            }) as any;
+            if (ev?.eventName === 'RewardClaimed' || ev?.eventName === 'Claimed') {
+              const t = Number(ev?.args?.tokenType ?? ev?.args?.token);
+              if (!Number.isNaN(t)) {
+                const info = TOKEN_INFO[t];
+                tokenTypeLabel = info?.symbol ?? `Token ${t}`;
+                tokenInfo = info;
+                break;
+              }
+            }
+          } catch {}
+        }
+      } catch {}
+      const details = tokenInfo
+        ? `${tokenInfo.amountPerClaim} ${tokenInfo.symbol}`
+        : (tokenTypeLabel ? tokenTypeLabel : undefined);
+      const desc = details ? `You received ${details}. ${pendingHash ? `Tx: ${pendingHash}` : ''}` : (pendingHash ? `Tx: ${pendingHash}` : undefined);
+      toast({ title: 'On-chain claim complete', description: desc });
+    }
+  }, [txSuccess, txReceipt]);
+
+  useEffect(() => {
+    // Hydrate from sessionStorage immediately to avoid blank while fetching
+    try {
+      const cached = sessionStorage.getItem(`article:${articleId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached) as { content?: string };
+        if (parsed?.content && parsed.content.length > 50) {
+          setFullContent((prev) => (prev ?? parsed.content) ?? null);
+        }
+      }
+    } catch {}
+  }, [articleId]);
+
+  useEffect(() => {
+    if (!article) return;
+    
+    // Immediately set content from cached RSS data if available
+    const initial = (article as any).content as string | undefined;
+    if (initial && initial.length > 50) {
+      setFullContent(initial);
+    }
+
+    // Background enhancement - non-blocking with abort
+    if (article.original_url) {
+      const ctrl = new AbortController();
+      fetch(`/api/scrape?url=${encodeURIComponent(article.original_url)}`, { signal: ctrl.signal })
+        .then(res => res && res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.content && data.content.length > 100) {
+            // Prefer longer content so we don't regress to short blurb
+            setFullContent(prev => {
+              const prevLen = (prev?.length ?? 0);
+              return data.content.length > prevLen ? data.content : prev ?? data.content;
+            });
+            try {
+              sessionStorage.setItem(`article:${articleId}` , JSON.stringify({ content: data.content, ts: Date.now() }));
+            } catch {}
+          }
+        })
+        .catch(() => {}); // Silent fail for background enhancement
+      return () => ctrl.abort();
+    }
+  }, [article]);
+
+  // When the detailed article fetch completes, prefer its content if it's longer
+  useEffect(() => {
+    if (articleDetail?.content && typeof articleDetail.content === 'string') {
+      setFullContent((prev) => {
+        const prevLen = prev?.length ?? 0;
+        return articleDetail.content.length > prevLen ? articleDetail.content : prev ?? articleDetail.content;
+      });
+      try {
+        sessionStorage.setItem(`article:${articleId}` , JSON.stringify({ content: articleDetail.content, ts: Date.now() }));
+      } catch {}
+    }
+  }, [articleDetail]);
+
+  const handleClaimReward = async () => {
+    try {
+      const response = await fetch("/api/user/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ 
+          articleId: params.id,
+          tokensEarned: 0.5 
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to claim tokens");
+      }
+      
+      const data = await response.json();
+      toast({
+        title: "Tokens Claimed!",
+        description: `You earned ${data.claim.tokensEarned} ARB tokens`,
+      });
+      
+      setIsClaimed(true);
+    } catch (error) {
+      toast({
+        title: "Claim Failed",
+        description: error instanceof Error ? error.message : "Failed to claim tokens",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Show loading only if we don't have any article data at all
+  if (!newsData && !article) {
+    return (
+      <div className="flex min-h-full flex-col">
+        <div className="sticky top-[49px] z-40 -mt-px border-b bg-background px-4 py-3">
+          <Button variant="ghost" size="sm" onClick={() => setLocation("/")} className="-ml-2 h-8">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!article) {
+    return (
+      <div className="flex min-h-full flex-col">
+        <div className="sticky top-[49px] z-40 -mt-px border-b bg-background px-4 py-3">
+          <Button variant="ghost" size="sm" onClick={() => setLocation("/")} className="-ml-2 h-8">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-sm text-muted-foreground">Article not found</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-full flex-col w-full relative">
+      <div className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-lg dark:bg-gray-900/70">
+        <div className="flex h-12 items-center justify-between px-4 mx-auto max-w-[400px] border-b border-gray-200 dark:border-gray-800">
+          <Button variant="ghost" size="sm" onClick={() => setLocation("/")} className="-ml-2 h-8">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back
+          </Button>
+          {hasReward && !isClaimed && (
+            isTimerActive ? (
+              <div className="flex items-center gap-1.5">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-r from-green-500 to-green-600">
+                  <Clock className="h-3.5 w-3.5 text-white" />
+                </div>
+                <span className="text-sm font-medium tabular-nums">{timer}s</span>
+              </div>
+            ) : (
+              showClaimHint && (
+                <div className="rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs font-medium text-yellow-900 shadow-sm">
+                  Scroll down to claim
+                </div>
+              )
+            )
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 bg-white dark:bg-black">
+        {article.image && (
+          <div className="relative w-full overflow-hidden" style={{ aspectRatio: '16/9' }}>
+            <img
+              src={article.image}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-black/20" />
+            <div className="absolute bottom-0 left-0 right-0 p-4">
+              <div className="w-full">
+                <div className="flex items-center gap-3 mb-3">
+                  <Badge variant="secondary" className="bg-white/90 text-black font-medium text-xs">
+                    {article.source?.title || 'CoinDesk'}
+                  </Badge>
+                  <span className="text-xs text-white/80">
+                    {article.published_at && !isNaN(new Date(article.published_at).getTime())
+                      ? formatDistanceToNow(new Date(article.published_at), { addSuffix: true })
+                      : ""}
+                  </span>
+                </div>
+                <h1 className="text-3xl font-bold tracking-tight text-white">{article.title}</h1>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Content body */}
+        <div className="px-4 pt-4">
+          <div className="mx-auto max-w-[400px]">
+            {fullContent ? (
+              <article className="prose prose-sm sm:prose md:prose-base prose-img:rounded-lg prose-p:leading-relaxed dark:prose-invert">
+                <div dangerouslySetInnerHTML={{ __html: fullContent }} />
+              </article>
+            ) : articleDetail?.content ? (
+              <article className="prose prose-sm sm:prose md:prose-base prose-img:rounded-lg prose-p:leading-relaxed dark:prose-invert">
+                <div dangerouslySetInnerHTML={{ __html: articleDetail.content }} />
+              </article>
+            ) : article.description ? (
+              <div className="bg-black/[0.02] rounded-xl p-4 mb-4 border border-black/[0.03] dark:bg-white/10 dark:border-white/10">
+                <p className="text-base text-black/80 dark:text-white/80 leading-relaxed">{article.description}</p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Claim section */}
+        <div className="px-4 pb-24">
+          <div className="mx-auto max-w-[400px]">
+            {!isClaimed ? (
+              <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm border border-black/10 dark:bg-gray-900 dark:border-gray-800">
+                <div className="px-6 py-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 shadow-md">
+                      <DollarSign className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Earn Rewards</h3>
+                      <p className="text-sm text-gray-600 dark:text-white/80">
+                        {hasReward ? (isTimerActive ? 'Read timer in progress…' : 'Eligible to claim tokens') : 'Read to earn on selected articles'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {claimsUsedToday >= 3 && (
+                    <div className="mt-3 text-xs text-red-600 dark:text-red-400">All claims done for today. Come back tomorrow.</div>
+                  )}
+                  <div className="mt-4 flex items-center justify-between">
+                    <div className="text-sm text-gray-600 dark:text-white/70" />
+                    <Button
+                      size="sm"
+                      className="h-9 bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700"
+                      disabled={!hasReward || isTimerActive || onchainBusy || claimsUsedToday >= 3 || !isConnected}
+                      onClick={handleOnchainClaim}
+                    >
+                      {onchainBusy || txPending ? 'Claiming…' : (claimsUsedToday >= 3 ? 'Limit reached' : 'Claim')}
+                    </Button>
+                  </div>
+
+                  {/* No token selection UI; token is chosen randomly on submit */}
+                </div>
+                <div className="h-1.5 w-full bg-gradient-to-r from-green-500 to-green-600" />
+              </div>
+            ) : (
+              <div className="mt-8 overflow-hidden rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 shadow-sm">
+                <div className="px-6 py-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-r from-green-400 to-emerald-500 shadow-md">
+                      <CheckCircle className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-green-900">Reward Claimed!</h3>
+                      <p className="text-sm text-green-700">You've earned 0.5 ARB tokens for reading this article</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="h-1.5 w-full bg-gradient-to-r from-green-400 to-emerald-500" />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
