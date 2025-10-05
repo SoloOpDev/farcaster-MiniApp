@@ -386,6 +386,23 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
         setOnchainResult(null);
       }
       
+      // Check ETH balance for gas
+      if (eth?.request) {
+        try {
+          const balance = await eth.request({
+            method: 'eth_getBalance',
+            params: [address, 'latest']
+          });
+          const balanceInEth = parseInt(balance, 16) / 1e18;
+          if (balanceInEth < 0.0001) {
+            setOnchainResult('Insufficient ETH for gas fees. You need ~$0.01 worth of ETH on Arbitrum.');
+            return;
+          }
+        } catch (e) {
+          console.warn('Could not check balance:', e);
+        }
+      }
+      
       setOnchainBusy(true);
       setOnchainResult(null);
       
@@ -420,7 +437,22 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       });
       
     } catch (e: any) {
-      setOnchainResult(`Error: ${e?.message || 'Failed to submit claim. Please try again.'}`);
+      console.error('Claim error:', e);
+      
+      // User-friendly error messages
+      let errorMsg = 'Failed to claim. Please try again.';
+      
+      if (e?.message?.includes('rejected') || e?.message?.includes('denied') || e?.code === 4001) {
+        errorMsg = 'Transaction cancelled by user.';
+      } else if (e?.message?.includes('insufficient funds') || e?.message?.includes('insufficient fee')) {
+        errorMsg = 'Insufficient ETH for gas fees. You need ~$0.01 worth of ETH on Arbitrum.';
+      } else if (e?.message?.includes('already claimed')) {
+        errorMsg = 'Already claimed today. Come back tomorrow!';
+      } else if (e?.message?.includes('network') || e?.message?.includes('chain')) {
+        errorMsg = 'Network error. Please switch to Arbitrum and try again.';
+      }
+      
+      setOnchainResult(errorMsg);
     } finally {
       setOnchainBusy(false);
     }
