@@ -159,12 +159,14 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
   });
 
   const { data: userClaims = [] } = useQuery<UserClaim[]>({
-    queryKey: ["/api/user/claims"],
+    queryKey: ["/api/user/claims", fid],
     queryFn: async () => {
-      const res = await fetch(getApiUrl("/api/user/claims"));
+      const url = fid ? `${getApiUrl("/api/user/claims")}?fid=${fid}` : getApiUrl("/api/user/claims");
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch claims");
       return res.json();
     },
+    enabled: Boolean(fid), // Only fetch when FID is available
     staleTime: 30 * 1000,
   });
 

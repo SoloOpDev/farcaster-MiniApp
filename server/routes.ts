@@ -190,9 +190,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/user/claims", async (_req, res) => {
+  app.get("/api/user/claims", async (req, res) => {
     try {
-      const userId = "default-user";
+      // Get FID from query parameter or default for backward compatibility
+      const fid = req.query.fid as string;
+      const userId = fid ? `fid-${fid}` : "default-user";
+      
       const claims = await storage.getUserClaims(userId);
       res.json(claims);
     } catch (error) {
