@@ -801,8 +801,8 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
                     </div>
                   )}
                   
-                  {/* Wallet mismatch warning */}
-                  {boundWallet && address && boundWallet.toLowerCase() !== address.toLowerCase() && (
+                  {/* Wallet mismatch warning - ONLY show if bound wallet is NOT zero address */}
+                  {boundWallet && address && boundWallet !== '0x0000000000000000000000000000000000000000' && boundWallet.toLowerCase() !== address.toLowerCase() && (
                     <div className="mt-3 text-sm bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-lg p-3">
                       <div className="font-semibold mb-1">⚠️ Wallet Mismatch Detected</div>
                       <div className="text-xs space-y-1">
