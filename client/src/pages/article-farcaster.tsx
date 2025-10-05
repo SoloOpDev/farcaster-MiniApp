@@ -224,12 +224,23 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       await fetch('/api/record-claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fid, tokens: [TOKEN_INFO[tokenType].symbol], txHash: hash })
+        body: JSON.stringify({ fid, articleId, tokens: [TOKEN_INFO[tokenType].symbol], txHash: hash })
       });
       
     } catch (e: any) {
-      setOnchainResult(e?.message || 'Failed to submit on-chain claim');
-      toast({ title: 'Claim failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+      let errorMsg = e?.message || 'Failed to submit on-chain claim';
+      
+      // User-friendly error messages
+      if (e?.message?.includes('FID_BOUND_TO_DIFFERENT_WALLET')) {
+        errorMsg = 'Your FID is bound to a different wallet today. Please use the same wallet you used for your first claim, or wait until tomorrow to use a different wallet.';
+      } else if (e?.message?.includes('rejected') || e?.message?.includes('denied') || e?.code === 4001) {
+        errorMsg = 'Transaction cancelled by user.';
+      } else if (e?.message?.includes('insufficient funds') || e?.message?.includes('insufficient fee')) {
+        errorMsg = 'Insufficient ETH for gas fees.';
+      }
+      
+      setOnchainResult(errorMsg);
+      toast({ title: 'Claim failed', description: errorMsg, variant: 'destructive' });
     } finally {
       setOnchainBusy(false);
     }

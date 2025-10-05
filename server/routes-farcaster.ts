@@ -149,7 +149,7 @@ export function registerFarcasterRoutes(app: Express) {
   // Record claim
   app.post("/api/record-claim", async (req, res) => {
     try {
-      const { fid, tokens, txHash } = req.body;
+      const { fid, articleId, tokens, txHash } = req.body;
       
       if (!fid) {
         return res.status(400).json({ error: "Missing fid" });
@@ -165,6 +165,7 @@ export function registerFarcasterRoutes(app: Express) {
         await db.set(claimKey, {
           lastClaimDate: today,
           claimedToday: true,
+          articleId,
           tokens,
           txHash
         });
@@ -173,15 +174,16 @@ export function registerFarcasterRoutes(app: Express) {
         // Fallback to in-memory
         memoryClaims.set(fid.toString(), {
           lastClaimDate: today,
-          claimedToday: true
+          claimedToday: true,
+          articleId
         });
       }
       
-      // Also store in existing storage for compatibility
+      // Store in existing storage with the actual articleId
       try {
         await storage.createUserClaim({
           userId: `fid-${fid}`,
-          articleId: 'daily-claim',
+          articleId: articleId || 'unknown',
           tokensEarned: tokens?.length || 1
         });
       } catch (err) {
@@ -190,7 +192,8 @@ export function registerFarcasterRoutes(app: Express) {
       
       res.json({ 
         success: true,
-        message: `Claim recorded for FID ${fid}`,
+        message: `Claim recorded for FID ${fid} on article ${articleId}`,
+        articleId,
         tokens,
         txHash
       });

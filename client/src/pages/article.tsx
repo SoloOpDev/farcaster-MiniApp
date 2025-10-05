@@ -124,6 +124,28 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
     },
   });
 
+  // DEBUG: Check what wallet is bound to this FID today
+  const todayIndex = BigInt(Math.floor(Date.now() / 86400000));
+  const { data: boundWallet } = useReadContract({
+    abi: NEWS_REWARD_ABI_V2,
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    functionName: 'fidWalletForDay',
+    args: fid ? [BigInt(fid), todayIndex] : undefined,
+    query: { 
+      enabled: Boolean(CONTRACT_ADDRESS && fid),
+    },
+  });
+
+  useEffect(() => {
+    if (boundWallet && address) {
+      console.log('🔍 DEBUG FID-WALLET BINDING:');
+      console.log('  Your FID:', fid);
+      console.log('  Connected Wallet:', address);
+      console.log('  Bound Wallet from contract:', boundWallet);
+      console.log('  Addresses Match?:', boundWallet?.toLowerCase() === address?.toLowerCase());
+    }
+  }, [boundWallet, address, fid]);
+
   const hasClaimedAll3 = claimsCount ? Number(claimsCount) >= 3 : false;
   
   const { data: newsData } = useQuery<CryptoPanicResponse>({
@@ -147,6 +169,18 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
   });
 
   const articleId = params.id;
+  
+  // Check if user has already claimed from THIS specific article
+  const hasClaimedThisArticle = userClaims.some(claim => 
+    claim.articleId === articleId && claim.userId === `fid-${fid}`
+  );
+  
+  // Update isClaimed when we detect this article was already claimed
+  useEffect(() => {
+    if (hasClaimedThisArticle) {
+      setIsClaimed(true);
+    }
+  }, [hasClaimedThisArticle]);
   const article = newsData?.results?.find(a => a.id.toString() === articleId);
   
   // Log article when found
@@ -309,6 +343,8 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       
       console.log('📝 Claiming with contract:', CONTRACT_ADDRESS);
       console.log('📝 FID:', fid);
+      console.log('📝 Connected Wallet Address:', address);
+      console.log('📝 Bound Wallet from Contract:', boundWallet);
       
       if (!fid) {
         setOnchainResult('Error: Farcaster FID not found');
@@ -430,11 +466,14 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       setPendingHash(hash as `0x${string}`);
       setOnchainResult(`Submitted. Tx: ${hash}`);
       
-      await fetch('/api/record-claim', {
+      await fetch(getApiUrl('/api/record-claim'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fid, tokens: [TOKEN_INFO[tokenType].symbol], txHash: hash })
+        body: JSON.stringify({ fid, articleId, tokens: [TOKEN_INFO[tokenType].symbol], txHash: hash })
       });
+      
+      // Invalidate user claims to refresh the list
+      queryClient.invalidateQueries({ queryKey: ['/api/user/claims'] });
       
     } catch (e: any) {
       console.error('Claim error:', e);
@@ -448,6 +487,8 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
         errorMsg = 'Insufficient ETH for gas fees. You need ~$0.01 worth of ETH on Arbitrum.';
       } else if (e?.message?.includes('already claimed')) {
         errorMsg = 'Already claimed today. Come back tomorrow!';
+      } else if (e?.message?.includes('FID_BOUND_TO_DIFFERENT_WALLET')) {
+        errorMsg = `Your FID is bound to a different wallet today. Connected: ${address?.slice(0,6)}...${address?.slice(-4)} | Bound: ${boundWallet ? (boundWallet as string).slice(0,6) + '...' + (boundWallet as string).slice(-4) : 'Unknown'}. Please use the same wallet or wait until tomorrow.`;
       } else if (e?.message?.includes('network') || e?.message?.includes('chain')) {
         errorMsg = 'Network error. Please switch to Arbitrum and try again.';
       }
@@ -825,6 +866,18 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
                       ⚠️ Contract not configured. Set VITE_CONTRACT_ADDRESS and redeploy.
                     </div>
                   )}
+                  
+                  {/* Wallet mismatch warning */}
+                  {boundWallet && address && boundWallet.toLowerCase() !== address.toLowerCase() && (
+                    <div className="mt-3 text-sm bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-lg p-3">
+                      <div className="font-semibold mb-1">⚠️ Wallet Mismatch Detected</div>
+                      <div className="text-xs space-y-1">
+                        <div>Your FID is bound to: <span className="font-mono">{(boundWallet as string).slice(0,6)}...{(boundWallet as string).slice(-4)}</span></div>
+                        <div>Currently connected: <span className="font-mono">{address.slice(0,6)}...{address.slice(-4)}</span></div>
+                        <div className="mt-2 text-amber-700 dark:text-amber-400">You must use the bound wallet to claim, or wait until tomorrow to use a different wallet.</div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mt-4 flex items-center justify-between">
                     <div className="text-sm text-gray-600 dark:text-white/70">
@@ -837,10 +890,10 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
                           ? 'bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600'
                           : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
                       }`}
-                      disabled={(!hasReward && !isLuckyPrize) || isTimerActive || onchainBusy || !fid || (isLuckyPrize && !hasClaimedAll3) || !CONTRACT_ADDRESS}
+                      disabled={(!hasReward && !isLuckyPrize) || isTimerActive || onchainBusy || !fid || (isLuckyPrize && !hasClaimedAll3) || !CONTRACT_ADDRESS || isClaimed || hasClaimedThisArticle}
                       onClick={isLuckyPrize ? handleLuckyPrizeClaim : handleOnchainClaim}
                     >
-                      {onchainBusy || txPending ? 'Claiming…' : (isLuckyPrize ? 'Try Luck 🍀' : 'Claim')}
+                      {isClaimed || hasClaimedThisArticle ? 'Claimed ✓' : (onchainBusy || txPending ? 'Claiming…' : (isLuckyPrize ? 'Try Luck 🍀' : 'Claim'))}
                     </Button>
                   </div>
 
