@@ -175,7 +175,8 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
       setOnchainResult(null);
       
       // Deterministic token type based on article ID: 0=CATCH, 1=BOOP, 2=ARB
-      const tokenType = articleId === "0" ? 0 : articleId === "3" ? 1 : 2;
+      // Article IDs are "1", "4", "7" (since RSS assigns id = index + 1)
+      const tokenType = articleId === "1" ? 0 : articleId === "4" ? 1 : 2;
       
       const hash = await writeContractAsync({
         abi: NEWS_REWARD_ABI_V2,
