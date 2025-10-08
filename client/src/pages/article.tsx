@@ -233,7 +233,7 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
   }, [articleDetailError]);
 
   const articleIndex = newsData?.results?.findIndex(a => a.id.toString() === params.id) ?? -1;
-  const rewardableIndices = [0, 3, 6];
+  const rewardableIndices = [0];
   const LUCKY_PRIZE_INDEX = 2;
   const isLuckyPrize = articleIndex === LUCKY_PRIZE_INDEX;
   

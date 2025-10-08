@@ -73,7 +73,7 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
   });
 
   const articleIndex = newsData?.results?.findIndex(a => a.id.toString() === params.id) ?? -1;
-  const rewardableIndices = [0, 3, 6];
+  const rewardableIndices = [0];
   const hasReward = articleIndex >= 0 && 
     rewardableIndices.includes(articleIndex) &&
     !userClaims.some(claim => claim.articleId === params.id);

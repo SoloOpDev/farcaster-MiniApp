@@ -14,7 +14,7 @@ import { useFarcaster } from "@/lib/farcaster";
 import { getApiUrl } from "@/lib/api";
 
 const getRewardIndices = () => {
-  return [0, 3, 6];
+  return [0];
 };
 
 const LUCKY_PRIZE_INDEX = 2;
