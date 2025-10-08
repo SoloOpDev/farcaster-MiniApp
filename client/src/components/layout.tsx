@@ -154,7 +154,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="mx-auto flex w-full max-w-[800px] items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10">
-                <span className="font-bold text-purple-700">{Math.min(claimsUsed, 3)}/3</span>
+                <span className="font-bold text-purple-700">{Math.min(claimsUsed, 1)}/1</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="text-sm text-gray-600 dark:text-gray-300">

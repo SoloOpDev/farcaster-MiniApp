@@ -163,6 +163,27 @@ export const NEWS_REWARD_ABI_V2 = [
     ]
   },
   {
+    type: 'function',
+    name: 'catchAmount',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+    stateMutability: 'view'
+  },
+  {
+    type: 'function',
+    name: 'boopAmount',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+    stateMutability: 'view'
+  },
+  {
+    type: 'function',
+    name: 'arbAmount',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+    stateMutability: 'view'
+  },
+  {
     type: 'event',
     name: 'AmountsUpdated',
     inputs: [

@@ -13,10 +13,11 @@ import { useFarcaster } from "@/lib/farcaster";
 import type { CryptoPanicResponse, UserClaim } from "@shared/schema";
 import { getApiUrl } from "@/lib/api";
 
-const TOKEN_INFO: Record<number, { symbol: string; address: string; amountPerClaim: string }> = {
-  0: { symbol: 'CATCH', address: '0xbc4c97fb9befaa8b41448e1dfcc5236da543217f', amountPerClaim: '3' },
-  1: { symbol: 'BOOP', address: '0x13A7DeDb7169a17bE92B0E3C7C2315B46f4772B3', amountPerClaim: '4000' },
-  2: { symbol: 'ARB', address: '0x912CE59144191C1204E64559FE8253a0e49E6548', amountPerClaim: '0.3' },
+// Token addresses - amounts will be read from contract
+const TOKEN_ADDRESSES: Record<number, { symbol: string; address: string }> = {
+  0: { symbol: 'CATCH', address: '0xbc4c97fb9befaa8b41448e1dfcc5236da543217f' },
+  1: { symbol: 'BOOP', address: '0x13A7DeDb7169a17bE92B0E3C7C2315B46f4772B3' },
+  2: { symbol: 'ARB', address: '0x912CE59144191C1204E64559FE8253a0e49E6548' },
 };
 
 export default function ArticlePage({ params }: { params: { id: string } }) {
@@ -96,6 +97,56 @@ export default function ArticlePage({ params }: { params: { id: string } }) {
 
   // Direct access to Vite environment variable - no casting needed
   const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS || '';
+  
+  // Read token amounts from smart contract
+  const { data: catchAmount } = useReadContract({
+    abi: NEWS_REWARD_ABI_V2,
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    functionName: 'catchAmount',
+    query: { enabled: Boolean(CONTRACT_ADDRESS) },
+  });
+
+  const { data: boopAmount } = useReadContract({
+    abi: NEWS_REWARD_ABI_V2,
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    functionName: 'boopAmount',
+    query: { enabled: Boolean(CONTRACT_ADDRESS) },
+  });
+
+  const { data: arbAmount } = useReadContract({
+    abi: NEWS_REWARD_ABI_V2,
+    address: CONTRACT_ADDRESS as `0x${string}`,
+    functionName: 'arbAmount',
+    query: { enabled: Boolean(CONTRACT_ADDRESS) },
+  });
+
+  // Dynamic TOKEN_INFO based on contract amounts
+  const TOKEN_INFO: Record<number, { symbol: string; address: string; amountPerClaim: string }> = useMemo(() => {
+    const formatAmount = (amount: bigint | undefined): string => {
+      if (!amount) return '0';
+      // Convert from wei to token amount (divide by 10^18)
+      const tokenAmount = Number(amount) / 1e18;
+      return tokenAmount.toString();
+    };
+
+    return {
+      0: { 
+        symbol: TOKEN_ADDRESSES[0].symbol, 
+        address: TOKEN_ADDRESSES[0].address, 
+        amountPerClaim: formatAmount(catchAmount) 
+      },
+      1: { 
+        symbol: TOKEN_ADDRESSES[1].symbol, 
+        address: TOKEN_ADDRESSES[1].address, 
+        amountPerClaim: formatAmount(boopAmount) 
+      },
+      2: { 
+        symbol: TOKEN_ADDRESSES[2].symbol, 
+        address: TOKEN_ADDRESSES[2].address, 
+        amountPerClaim: formatAmount(arbAmount) 
+      },
+    };
+  }, [catchAmount, boopAmount, arbAmount]);
   
   // CRITICAL DEBUG: Log raw env value
   console.log('🔍 RAW import.meta.env.VITE_CONTRACT_ADDRESS:', import.meta.env.VITE_CONTRACT_ADDRESS);
